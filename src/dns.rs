@@ -133,7 +133,7 @@ impl DnsClient {
 pub struct DnsBenchmark {
     pub client: DnsClient,
     pub domain: String,
-    pub rate: u32,
+    pub workers: usize,
     pub mode: cli::TestMode,
 }
 
@@ -141,7 +141,7 @@ impl DnsBenchmark {
     pub fn new(
         target: SocketAddr,
         domain: String,
-        rate: u32,
+        workers: usize,
         timeout: std::time::Duration,
         mode: cli::TestMode,
     ) -> Self {
@@ -149,7 +149,7 @@ impl DnsBenchmark {
         Self {
             client,
             domain,
-            rate,
+            workers,
             mode,
         }
     }

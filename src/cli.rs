@@ -35,14 +35,6 @@ pub struct Cli {
     pub count: u64,
 
     #[arg(
-        short = 'r',
-        long = "rate",
-        default_value_t = 100,
-        help = "Queries per second"
-    )]
-    pub rate: u32,
-
-    #[arg(
         short = 'o',
         long = "timeout",
         default_value_t = 5,
@@ -76,7 +68,6 @@ impl Cli {
         println!("Target: {}", args.target);
         println!("Domain: {}", args.domain);
         println!("Total queries: {}", args.count);
-        println!("Rate: {} QPS", args.rate);
         println!("Timeout: {} seconds", args.timeout);
         println!("Workers: {}", args.workers);
         println!("Test mode: {:?}", args.mode);
@@ -86,20 +77,12 @@ impl Cli {
     }
 
     pub fn validate(&self) -> Result<(), String> {
-        if self.rate == 0 {
-            return Err("Rate must be greater than 0".to_string());
-        }
-
         if self.count == 0 {
             return Err("Count must be greater than 0".to_string());
         }
 
         if self.timeout == 0 {
             return Err("Timeout must be greater than 0".to_string());
-        }
-
-        if self.workers == 0 {
-            return Err("Workers must be greater than 0".to_string());
         }
 
         Ok(())

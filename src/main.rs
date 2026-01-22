@@ -18,7 +18,7 @@ async fn main() -> anyhow::Result<()> {
     let benchmark = DnsBenchmarkStruct::new(
         args.target,
         args.domain,
-        args.rate,
+        args.workers,
         Duration::from_secs(args.timeout),
         args.mode,
     );

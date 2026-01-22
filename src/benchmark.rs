@@ -5,7 +5,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::time::interval;
+use tokio::sync::Semaphore;
 
 #[derive(Debug)]
 pub struct BenchmarkStats {
@@ -93,7 +93,7 @@ impl DnsBenchmark {
         let stats = BenchmarkStats::new();
         let stats_clone = stats.clone();
 
-        let rate = self.rate;
+        let workers = self.workers;
         let domain = self.domain.clone();
         let client = self.client.clone();
         let mode = self.mode.clone();
@@ -103,58 +103,52 @@ impl DnsBenchmark {
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {percent}% ({pos}/{len}) {msg}",
+                    "{spinner:.green} [{elapsed_precise}] [{wide_bar:40.cyan/blue}] {percent}% ({pos}/{len}) {msg}",
                 )
                 .unwrap()
                 .progress_chars("#>-"),
         );
 
-        let _start_time = Instant::now();
-
         let handle = tokio::spawn(async move {
-            let mut interval = interval(Duration::from_millis(1000 / rate as u64));
-            let mut last_print = Instant::now();
+            let semaphore = Arc::new(Semaphore::new(workers));
             let mut sent_count = 0;
+            let mut last_print = Instant::now();
+            let _start_time = Instant::now();
 
             while sent_count < count {
-                interval.tick().await;
+                // Acquire permit to limit concurrency
+                // This will block if we have reached the max number of workers
+                let permit = match semaphore.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break, // Should not happen
+                };
 
-                let batch_size = rate.min((count - sent_count) as u32);
+                let client = client.clone();
+                let domain = domain.clone();
+                let stats = stats_clone.clone();
+                let mode = mode.clone();
+                let pb_clone = pb.clone();
 
-                let tasks: Vec<_> = (0..batch_size)
-                    .map(|_| {
-                        let client = client.clone();
-                        let domain = domain.clone();
-                        let stats = stats_clone.clone();
-                        let mode = mode.clone();
+                tokio::spawn(async move {
+                    let packet = DnsPacket::new(domain, &mode);
+                    stats.increment_total();
 
-                        tokio::spawn(async move {
-                            let packet = DnsPacket::new(domain, &mode);
-                            stats.increment_total();
+                    match client.send_query(&packet).await {
+                        Ok(_) => {
+                            stats.increment_success();
+                        }
+                        Err(_) => {
+                            stats.increment_failure();
+                        }
+                    }
+                    pb_clone.inc(1);
+                    drop(permit); // Release permit
+                });
 
-                            match client.send_query(&packet).await {
-                                Ok(_) => {
-                                    stats.increment_success();
-                                }
-                                Err(_) => {
-                                    stats.increment_failure();
-                                }
-                            }
-                        })
-                    })
-                    .collect();
-
-                for task in tasks {
-                    let _ = task.await;
-                }
-
-                sent_count += batch_size as u64;
-
-                let progress = stats.total_requests.load(Ordering::Relaxed);
-                pb.set_position(progress);
+                sent_count += 1;
 
                 if last_print.elapsed() >= Duration::from_millis(500) {
-                    let summary = stats.get_summary();
+                    let summary = stats_clone.get_summary();
                     pb.set_message(format!(
                         "QPS: {:.1}, Success: {:.1}%",
                         summary.requests_per_second, summary.success_rate
@@ -163,8 +157,12 @@ impl DnsBenchmark {
                 }
             }
 
+            // Wait for all active tasks to complete by acquiring all permits
+            // We cast workers to u32 for acquire_many
+            let _ = semaphore.acquire_many(workers as u32).await;
+
             pb.finish_with_message("Benchmark completed");
-            stats.get_summary()
+            stats_clone.get_summary()
         });
 
         match handle.await {
@@ -182,7 +180,7 @@ impl Clone for DnsBenchmark {
         Self {
             client: DnsClient::new(self.client.target, self.client.timeout),
             domain: self.domain.clone(),
-            rate: self.rate,
+            workers: self.workers,
             mode: self.mode.clone(),
         }
     }

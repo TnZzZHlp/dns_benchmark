@@ -103,7 +103,7 @@ impl DnsBenchmark {
         pb.set_style(
             ProgressStyle::default_bar()
                 .template(
-                    "{spinner:.green} [{elapsed_precise}] [{wide_bar:40.cyan/blue}] {percent}% ({pos}/{len}) {msg}",
+                    "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {percent}% ({pos}/{len}) {msg}",
                 )
                 .unwrap()
                 .progress_chars("#>-"),

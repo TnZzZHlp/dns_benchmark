@@ -46,8 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: |
-            target/${{ matrix.target }}/release/dns_benchmark*
+          path: target/${{ matrix.target }}/release/dns_benchmark*
           if-no-files-found: error
 
   create-release:
@@ -80,12 +79,22 @@ jobs:
         with:
           path: artifacts
 
+      - name: Prepare release files
+        run: |
+          # Create clean release directory
+          mkdir -p release
+          
+          # Copy and rename Linux binary
+          cp artifacts/dns_benchmark-linux-x64/dns_benchmark release/dns_benchmark-linux-x64
+          chmod +x release/dns_benchmark-linux-x64
+          
+          # Copy and rename Windows binary
+          cp artifacts/dns_benchmark-windows-x64.exe/dns_benchmark.exe release/dns_benchmark-windows-x64.exe
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           name: Release v${{ steps.get_version.outputs.version }}
           generate_release_notes: true
           prerelease: ${{ contains(steps.get_version.outputs.version, '-') }}
-          files: |
-            artifacts/dns_benchmark-linux-x64/*
-            artifacts/dns_benchmark-windows-x64.exe/*
+          files: release/*

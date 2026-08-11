@@ -1,5 +1,5 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use rand::{distr::Alphanumeric, Rng};
+use rand::{RngExt, distr::Alphanumeric};
 use std::net::SocketAddr;
 
 use crate::cli;
@@ -15,7 +15,7 @@ pub struct DnsHeader {
 }
 
 impl DnsHeader {
-    pub fn new(id: u16) -> Self {
+    pub const fn new(id: u16) -> Self {
         Self {
             id,
             flags: 0x0100, // Standard query, recursion desired
@@ -26,7 +26,7 @@ impl DnsHeader {
         }
     }
 
-    pub fn to_bytes(&self) -> Bytes {
+    pub fn to_bytes(self) -> Bytes {
         let mut buf = BytesMut::new();
         buf.put_u16(self.id);
         buf.put_u16(self.flags);
@@ -46,7 +46,7 @@ pub struct DnsQuestion {
 }
 
 impl DnsQuestion {
-    pub fn new(name: String) -> Self {
+    pub const fn new(name: String) -> Self {
         Self {
             name,
             qtype: 1,  // A record
@@ -56,16 +56,17 @@ impl DnsQuestion {
 
     pub fn to_bytes(&self) -> Bytes {
         let mut buf = BytesMut::new();
-        
+
+        #[allow(clippy::cast_possible_truncation)]
         for label in self.name.split('.') {
             buf.put_u8(label.len() as u8);
             buf.put_slice(label.as_bytes());
         }
         buf.put_u8(0); // End of name
-        
+
         buf.put_u16(self.qtype);
         buf.put_u16(self.qclass);
-        
+
         buf.freeze()
     }
 }
@@ -79,7 +80,7 @@ pub struct DnsPacket {
 impl DnsPacket {
     pub fn new(domain: String, mode: &cli::TestMode) -> Self {
         let id = rand::rng().random_range(0..65535);
-        
+
         let final_domain = match mode {
             cli::TestMode::SameDomain => domain,
             cli::TestMode::RandomSubdomain => {
@@ -88,7 +89,7 @@ impl DnsPacket {
                     .take(10)
                     .map(char::from)
                     .collect();
-                format!("{}.{}", random_prefix, domain)
+                format!("{random_prefix}.{domain}")
             }
         };
 
@@ -113,19 +114,19 @@ pub struct DnsClient {
 }
 
 impl DnsClient {
-    pub fn new(target: SocketAddr, timeout: std::time::Duration) -> Self {
+    pub const fn new(target: SocketAddr, timeout: std::time::Duration) -> Self {
         Self { target, timeout }
     }
 
     pub async fn send_query(&self, packet: &DnsPacket) -> anyhow::Result<()> {
         let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
         let data = packet.to_bytes();
-        
+
         socket.send_to(&data, self.target).await?;
-        
+
         let mut buf = vec![0u8; 512];
         let _ = tokio::time::timeout(self.timeout, socket.recv_from(&mut buf)).await?;
-        
+
         Ok(())
     }
 }
@@ -138,7 +139,7 @@ pub struct DnsBenchmark {
 }
 
 impl DnsBenchmark {
-    pub fn new(
+    pub const fn new(
         target: SocketAddr,
         domain: String,
         workers: usize,

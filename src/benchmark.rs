@@ -37,6 +37,7 @@ impl BenchmarkStats {
         self.failed_responses.fetch_add(1, Ordering::Relaxed);
     }
 
+    #[allow(clippy::cast_precision_loss)]
     pub fn get_summary(&self) -> BenchmarkSummary {
         let elapsed = self.start_time.elapsed();
         let total = self.total_requests.load(Ordering::Relaxed);
@@ -118,9 +119,8 @@ impl DnsBenchmark {
             while sent_count < count {
                 // Acquire permit to limit concurrency
                 // This will block if we have reached the max number of workers
-                let permit = match semaphore.clone().acquire_owned().await {
-                    Ok(p) => p,
-                    Err(_) => break, // Should not happen
+                let Ok(permit) = semaphore.clone().acquire_owned().await else {
+                    break;
                 };
 
                 let client = client.clone();
@@ -134,7 +134,7 @@ impl DnsBenchmark {
                     stats.increment_total();
 
                     match client.send_query(&packet).await {
-                        Ok(_) => {
+                        Ok(()) => {
                             stats.increment_success();
                         }
                         Err(_) => {
@@ -159,7 +159,9 @@ impl DnsBenchmark {
 
             // Wait for all active tasks to complete by acquiring all permits
             // We cast workers to u32 for acquire_many
-            let _ = semaphore.acquire_many(workers as u32).await;
+            let _ = semaphore
+                .acquire_many(u32::try_from(workers).unwrap_or(u32::MAX))
+                .await;
 
             pb.finish_with_message("Benchmark completed");
             stats_clone.get_summary()
@@ -170,7 +172,7 @@ impl DnsBenchmark {
                 summary.print();
                 Ok(summary)
             }
-            Err(e) => Err(anyhow::anyhow!("Benchmark failed: {}", e)),
+            Err(e) => Err(anyhow::anyhow!("Benchmark failed: {e}")),
         }
     }
 }
